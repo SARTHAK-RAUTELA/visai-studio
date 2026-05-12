@@ -1,0 +1,19 @@
+{
+  "name": "warm_aesthetic",
+  "display_name": "Warm Aesthetic",
+  "lut": "warm_golden",
+  "avg_clip_duration": 2.5,
+  "pacing": "flowing",
+  "transitions": ["dissolve", "fade"],
+  "transition_duration": 0.6,
+  "beat_sync": false,
+  "sync_every_n_beats": 4,
+  "speed_ramps": false,
+  "text_style": "handwritten_light",
+  "text_position": "top",
+  "vignette": false,
+  "film_grain": false,
+  "color_grade_intensity": 0.7,
+  "aspect_ratio_preference": "9:16",
+  "claude_modifier": "Warm, inviting, golden. Like a memory. Lifestyle content that makes you feel at home."
+}

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+env/
+
+# Environment
+backend/.env
+.env
+
+# Generated files
+backend/temp/
+backend/output/
+*.mp4
+*.mov
+*.mkv
+*.mp3
+*.wav
+*.edl.json
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

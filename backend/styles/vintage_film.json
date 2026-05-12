@@ -1,0 +1,19 @@
+{
+  "name": "vintage_film",
+  "display_name": "Vintage Film",
+  "lut": "vintage_film",
+  "avg_clip_duration": 3.0,
+  "pacing": "nostalgic",
+  "transitions": ["fade", "flash_white"],
+  "transition_duration": 1.0,
+  "beat_sync": false,
+  "sync_every_n_beats": 6,
+  "speed_ramps": false,
+  "text_style": "typewriter",
+  "text_position": "lower_third",
+  "vignette": true,
+  "film_grain": true,
+  "color_grade_intensity": 0.9,
+  "aspect_ratio_preference": "16:9",
+  "claude_modifier": "Old film, grain, nostalgia. Like a home movie from the past. Analog warmth, imperfect beauty."
+}

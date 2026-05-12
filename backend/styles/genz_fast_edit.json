@@ -1,0 +1,19 @@
+{
+  "name": "genz_fast_edit",
+  "display_name": "Gen Z Fast Edit",
+  "lut": "cyberpunk",
+  "avg_clip_duration": 0.8,
+  "pacing": "aggressive",
+  "transitions": ["hard_cut", "glitch", "flash", "zoom_punch"],
+  "transition_duration": 0.1,
+  "beat_sync": true,
+  "sync_every_n_beats": 1,
+  "speed_ramps": true,
+  "text_style": "bold_sans",
+  "text_position": "center",
+  "vignette": false,
+  "film_grain": false,
+  "color_grade_intensity": 1.0,
+  "aspect_ratio_preference": "9:16",
+  "claude_modifier": "Every beat gets a cut. This is a fast, punchy, viral edit. Use energy and momentum. Surprise the viewer."
+}

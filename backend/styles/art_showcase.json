@@ -1,0 +1,19 @@
+{
+  "name": "art_showcase",
+  "display_name": "Art Showcase",
+  "lut": "matte_black",
+  "avg_clip_duration": 5.0,
+  "pacing": "contemplative",
+  "transitions": ["fade_black", "dissolve"],
+  "transition_duration": 1.5,
+  "beat_sync": false,
+  "sync_every_n_beats": 16,
+  "speed_ramps": false,
+  "text_style": "elegant_serif",
+  "text_position": "bottom",
+  "vignette": false,
+  "film_grain": false,
+  "color_grade_intensity": 1.0,
+  "aspect_ratio_preference": "1:1",
+  "claude_modifier": "Gallery quality. Each frame is a work of art. Slow, deliberate reveals. The art is the star."
+}

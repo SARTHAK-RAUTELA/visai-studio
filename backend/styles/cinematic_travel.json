@@ -1,0 +1,19 @@
+{
+  "name": "cinematic_travel",
+  "display_name": "Cinematic Travel",
+  "lut": "teal_orange",
+  "avg_clip_duration": 4.0,
+  "pacing": "relaxed",
+  "transitions": ["fade", "dissolve", "zoom_in"],
+  "transition_duration": 0.8,
+  "beat_sync": false,
+  "sync_every_n_beats": 8,
+  "speed_ramps": false,
+  "text_style": "minimal_serif",
+  "text_position": "lower_third",
+  "vignette": true,
+  "film_grain": false,
+  "color_grade_intensity": 0.85,
+  "aspect_ratio_preference": "16:9",
+  "claude_modifier": "Create a cinematic, emotional travel narrative. Long, breathing shots. Let the landscape speak. Avoid quick cuts."
+}

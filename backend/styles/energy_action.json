@@ -1,0 +1,19 @@
+{
+  "name": "energy_action",
+  "display_name": "Energy / Action",
+  "lut": "teal_orange",
+  "avg_clip_duration": 1.2,
+  "pacing": "explosive",
+  "transitions": ["hard_cut", "zoom_punch", "flash"],
+  "transition_duration": 0.05,
+  "beat_sync": true,
+  "sync_every_n_beats": 2,
+  "speed_ramps": true,
+  "text_style": "bold_impactful",
+  "text_position": "center",
+  "vignette": false,
+  "film_grain": false,
+  "color_grade_intensity": 1.0,
+  "aspect_ratio_preference": "9:16",
+  "claude_modifier": "Maximum energy. Sports, gym, action. Every cut should feel like a punch. Use speed ramps on hero moments."
+}

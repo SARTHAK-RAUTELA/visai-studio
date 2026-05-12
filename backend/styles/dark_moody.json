@@ -1,0 +1,19 @@
+{
+  "name": "dark_moody",
+  "display_name": "Dark & Moody",
+  "lut": "moody_blue",
+  "avg_clip_duration": 3.5,
+  "pacing": "deliberate",
+  "transitions": ["fade", "dissolve"],
+  "transition_duration": 1.2,
+  "beat_sync": false,
+  "sync_every_n_beats": 8,
+  "speed_ramps": false,
+  "text_style": "minimal_light",
+  "text_position": "center",
+  "vignette": true,
+  "film_grain": true,
+  "color_grade_intensity": 1.0,
+  "aspect_ratio_preference": "9:16",
+  "claude_modifier": "Dark, atmospheric, cinematic. Every clip should feel like a still from an arthouse film. Minimal text. Let shadows tell the story."
+}

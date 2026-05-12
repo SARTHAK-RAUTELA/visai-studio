@@ -1,0 +1,19 @@
+{
+  "name": "minimal_slideshow",
+  "display_name": "Minimal Slideshow",
+  "lut": "airy_bright",
+  "avg_clip_duration": 4.5,
+  "pacing": "peaceful",
+  "transitions": ["ken_burns", "dissolve", "fade"],
+  "transition_duration": 1.5,
+  "beat_sync": false,
+  "sync_every_n_beats": 8,
+  "speed_ramps": false,
+  "text_style": "minimal_caption",
+  "text_position": "bottom",
+  "vignette": false,
+  "film_grain": false,
+  "color_grade_intensity": 0.6,
+  "aspect_ratio_preference": "9:16",
+  "claude_modifier": "Soft, gentle, memory-like. Photo album feel. Each moment breathes. Text is secondary to the imagery."
+}
