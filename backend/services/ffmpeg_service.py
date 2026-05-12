@@ -4,6 +4,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 # Maps VisualAI transition names → FFmpeg xfade transition names
 XFADE_MAP = {
     "fade": "fade",
@@ -30,10 +33,10 @@ XFADE_MAP = {
 
 
 class FFmpegService:
-    def __init__(self, ffmpeg_bin: str = "ffmpeg", ffprobe_bin: str = "ffprobe", threads: int = 4):
-        self.ffmpeg = ffmpeg_bin
-        self.ffprobe = ffprobe_bin
-        self.threads = threads
+    def __init__(self, ffmpeg_bin: str = None, ffprobe_bin: str = None, threads: int = None):
+        self.ffmpeg = ffmpeg_bin or os.getenv("FFMPEG_BIN", "ffmpeg")
+        self.ffprobe = ffprobe_bin or os.getenv("FFPROBE_BIN", "ffprobe")
+        self.threads = threads or int(os.getenv("FFMPEG_THREADS", "4"))
 
     def run(self, cmd: list, raise_on_error: bool = True) -> tuple:
         result = subprocess.run(cmd, capture_output=True, text=True)

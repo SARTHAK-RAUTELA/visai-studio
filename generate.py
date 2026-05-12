@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 """
 VisualAI Studio — CLI entry point (Phase 1)
 
@@ -69,9 +73,9 @@ def main():
     with open(style_path) as f:
         style_preset = json.load(f)
 
-    print("\n═══════════════════════════════════════════════════")
+    print("\n===================================================")
     print("  VisualAI Studio — Starting pipeline")
-    print("═══════════════════════════════════════════════════")
+    print("===================================================")
     print(f"  Clips    : {args.clips}")
     print(f"  Audio    : {args.audio}")
     print(f"  Style    : {args.style}")
@@ -128,9 +132,9 @@ def main():
             clips_dir=clips_dir,
         )
         size_mb = Path(output).stat().st_size / (1024 * 1024)
-        print(f"\n═══════════════════════════════════════════════════")
+        print(f"\n===================================================")
         print(f"  Done!  Output → {output}  ({size_mb:.1f} MB)")
-        print(f"═══════════════════════════════════════════════════\n")
+        print(f"===================================================\n")
     except Exception as e:
         import traceback
         print(f"\n[ERROR] Rendering failed: {e}")

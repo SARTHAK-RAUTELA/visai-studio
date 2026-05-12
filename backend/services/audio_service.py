@@ -9,9 +9,9 @@ class AudioService:
 
         y, sr = librosa.load(audio_path, sr=22050)
 
-        # Beat tracking
-        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="time")
-        beat_times = [float(b) for b in beat_frames]
+        # Beat tracking (sparse=False ensures a regular ndarray regardless of librosa version)
+        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="time", sparse=False)
+        beat_times = [float(b) for b in np.atleast_1d(beat_frames)]
 
         # Onset detection (energy peaks, not just metronome)
         onset_frames = librosa.onset.onset_detect(y=y, sr=sr, units="time")
@@ -28,7 +28,7 @@ class AudioService:
         peak_moments = [float(p) for p in peaks]
 
         spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        bpm = float(tempo)
+        bpm = float(np.squeeze(tempo))  # scalar even when librosa returns ndarray
         avg_energy = float(np.mean(energy))
         avg_brightness = float(np.mean(spectral_centroid))
 
