@@ -1,0 +1,18 @@
+{
+  "name": "lofi_aesthetic",
+  "lut": "pink_dream",
+  "avg_clip_duration": 3.0,
+  "pacing": "dreamy",
+  "transitions": ["dissolve", "fade_white"],
+  "transition_duration": 1.0,
+  "beat_sync": false,
+  "sync_every_n_beats": 8,
+  "speed_ramps": false,
+  "text_style": "handwritten_light",
+  "text_position": "top",
+  "vignette": true,
+  "film_grain": true,
+  "color_grade_intensity": 0.65,
+  "aspect_ratio_preference": "9:16",
+  "claude_modifier": "Soft, dreamy, pastel lo-fi aesthetic. Like a music video for a chill lo-fi playlist. Gentle fades, warm lighting, nostalgic. Grain and vignette for that analog feel."
+}

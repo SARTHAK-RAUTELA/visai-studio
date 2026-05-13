@@ -3,7 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from services.ffmpeg_service import FFmpegService
+from services.ffmpeg_service import FFmpegService, IMAGE_EXTENSIONS
 
 
 class ExportService:
@@ -14,12 +14,23 @@ class ExportService:
         self.luts_dir = Path(assets_dir) / "luts"
         self.fonts_dir = Path(assets_dir) / "fonts"
 
+    # Resolution presets: (width, height) indexed by aspect_ratio
+    RESOLUTIONS = {
+        "9:16":  {"720p": (720, 1280),  "1080p": (1080, 1920),  "4K": (2160, 3840)},
+        "16:9":  {"720p": (1280, 720),  "1080p": (1920, 1080),  "4K": (3840, 2160)},
+        "1:1":   {"720p": (720, 720),   "1080p": (1080, 1080),  "4K": (2160, 2160)},
+        "4:5":   {"720p": (720, 900),   "1080p": (1080, 1350),  "4K": (2160, 2700)},
+    }
+
     def render_from_edl(
         self,
         edl: dict,
         audio_path: str,
         output_path: str,
         clips_dir: str = None,
+        auto_captions: bool = False,
+        whisper_model: str = "base",
+        resolution_preset: str = "1080p",
     ) -> str:
         """
         Full rendering pipeline:
@@ -30,9 +41,10 @@ class ExportService:
           5. Mix in music track
         """
         project = edl.get("project", {})
-        resolution = project.get("resolution", "1080x1920")
-        parts = resolution.split("x")
-        target_w, target_h = int(parts[0]), int(parts[1])
+        aspect_ratio = project.get("aspect_ratio", "9:16")
+        res_map = self.RESOLUTIONS.get(aspect_ratio, self.RESOLUTIONS["9:16"])
+        target_w, target_h = res_map.get(resolution_preset, res_map["1080p"])
+        use_hevc = resolution_preset == "4K"
 
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
@@ -63,14 +75,55 @@ class ExportService:
                 clip_duration = source_out - source_in
 
                 trimmed_path = str(tmp / f"trimmed_{i:03d}.mp4")
-                self.ffmpeg.trim_clip(
-                    clip_path, trimmed_path,
-                    start=source_in,
-                    duration=clip_duration,
-                    speed_factor=speed,
-                    target_width=target_w,
-                    target_height=target_h,
-                )
+
+                # Photo → video conversion with Ken Burns
+                if Path(clip_path).suffix.lower() in IMAGE_EXTENSIONS:
+                    self.ffmpeg.image_to_video(
+                        clip_path, trimmed_path,
+                        duration=clip_duration,
+                        target_width=target_w,
+                        target_height=target_h,
+                        ken_burns=True,
+                    )
+                else:
+                    # Speed ramp override if specified in clip info
+                    ramp_type = clip_info.get("speed_ramp_type")
+                    if ramp_type and speed == 1.0:
+                        ramp_path = str(tmp / f"ramp_{i:03d}.mp4")
+                        self.ffmpeg.trim_clip(
+                            clip_path, ramp_path,
+                            start=source_in, duration=clip_duration,
+                            target_width=target_w, target_height=target_h,
+                        )
+                        self.ffmpeg.apply_speed_ramp_eased(
+                            ramp_path, trimmed_path,
+                            ramp_type=ramp_type,
+                            target_width=target_w, target_height=target_h,
+                        )
+                    else:
+                        self.ffmpeg.trim_clip(
+                            clip_path, trimmed_path,
+                            start=source_in, duration=clip_duration,
+                            speed_factor=speed,
+                            target_width=target_w, target_height=target_h,
+                        )
+
+                # Per-clip LUT override
+                per_grade = clip_info.get("per_clip_grade")
+                if per_grade:
+                    per_lut_name = per_grade.get("lut", "")
+                    per_lut_path = str(self.luts_dir / f"{per_lut_name}.cube") if per_lut_name else None
+                    per_graded_path = str(tmp / f"per_graded_{i:03d}.mp4")
+                    self.ffmpeg.apply_color_grade(
+                        trimmed_path, per_graded_path,
+                        lut_path=per_lut_path if per_lut_path and os.path.exists(per_lut_path) else None,
+                        lut_intensity=float(per_grade.get("lut_intensity", 0.5)),
+                        brightness=float(per_grade.get("brightness", 0.0)),
+                        contrast=float(per_grade.get("contrast", 1.0)),
+                        saturation=float(per_grade.get("saturation", 1.0)),
+                    )
+                    trimmed_path = per_graded_path
+
                 trimmed_clips.append(trimmed_path)
                 transitions_out.append(clip_info.get("transition_out", {"type": "hard_cut", "duration": 0.0}))
 
@@ -121,8 +174,42 @@ class ExportService:
             else:
                 print("  [4/5] No text overlays.")
 
-            # ── Step 5: Audio mix ────────────────────────────────────
-            print("  [5/5] Mixing audio...")
+            # ── Step 5: Auto-captions (Whisper) ─────────────────────
+            if auto_captions:
+                print("  [5/7] Generating auto-captions with Whisper...")
+                caption_overlays = self.ffmpeg.generate_captions(graded_path, whisper_model)
+                if caption_overlays:
+                    captions_path = str(tmp / "with_captions.mp4")
+                    try:
+                        self.ffmpeg.add_text_overlays(
+                            graded_path, captions_path,
+                            overlays=caption_overlays,
+                            fonts_dir=str(self.fonts_dir),
+                        )
+                        graded_path = captions_path
+                    except RuntimeError as e:
+                        print(f"    Warning: captions failed ({e}) — skipping")
+                else:
+                    print("  [5/7] No captions generated.")
+            else:
+                print("  [5/7] Auto-captions disabled.")
+
+            # ── Step 6: Sound FX ─────────────────────────────────────
+            sound_fx = edl.get("sound_fx", [])
+            if sound_fx:
+                print("  [6/7] Mixing sound FX...")
+                sfx_path = str(tmp / "with_sfx.mp4")
+                sfx_dir = str(self.luts_dir.parent / "sfx")
+                try:
+                    self.ffmpeg.mix_sound_fx(graded_path, sfx_path, sound_fx, sfx_dir)
+                    graded_path = sfx_path
+                except RuntimeError as e:
+                    print(f"    Warning: SFX mixing failed ({e}) — skipping")
+            else:
+                print("  [6/7] No sound FX.")
+
+            # ── Step 7: Audio mix ────────────────────────────────────
+            print("  [7/7] Mixing audio...")
             audio_cfg = edl.get("audio", {})
 
             if audio_path and os.path.exists(audio_path):

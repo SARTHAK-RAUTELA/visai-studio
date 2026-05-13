@@ -1,0 +1,18 @@
+{
+  "name": "dark_nature",
+  "lut": "forest_green",
+  "avg_clip_duration": 4.5,
+  "pacing": "contemplative",
+  "transitions": ["dissolve", "fade_black"],
+  "transition_duration": 1.2,
+  "beat_sync": false,
+  "sync_every_n_beats": 12,
+  "speed_ramps": false,
+  "text_style": "minimal_serif",
+  "text_position": "lower_third",
+  "vignette": true,
+  "film_grain": false,
+  "color_grade_intensity": 0.9,
+  "aspect_ratio_preference": "16:9",
+  "claude_modifier": "Dark organic nature aesthetic. Deep forest greens, earthy tones, slow breathing shots. Like a nature documentary crossed with a luxury eco brand. Serious, grounded, beautiful."
+}

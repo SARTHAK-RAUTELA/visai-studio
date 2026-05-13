@@ -1,11 +1,34 @@
 import base64
+import functools
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import anthropic
 import cv2
+
+
+def _retry(max_attempts: int = 3, base_delay: float = 2.0):
+    """Retry decorator with exponential back-off for transient API errors."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            last_exc = None
+            for attempt in range(max_attempts):
+                try:
+                    return fn(*args, **kwargs)
+                except (anthropic.APIConnectionError, anthropic.RateLimitError,
+                        anthropic.InternalServerError) as e:
+                    last_exc = e
+                    if attempt < max_attempts - 1:
+                        wait = base_delay * (2 ** attempt)
+                        print(f"  [claude] Transient error ({type(e).__name__}), retry {attempt + 1}/{max_attempts - 1} in {wait:.1f}s")
+                        time.sleep(wait)
+            raise last_exc
+        return wrapper
+    return decorator
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
@@ -31,6 +54,21 @@ class ClaudeService:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY not set in environment")
         self.client = anthropic.Anthropic(api_key=api_key)
+
+    # ------------------------------------------------------------------
+    # Token budget helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def optimal_frame_count(num_clips: int) -> int:
+        """Reduce frames per clip when many clips are present to stay within token budget."""
+        if num_clips <= 3:
+            return 10
+        if num_clips <= 6:
+            return 8
+        if num_clips <= 10:
+            return 5
+        return 3
 
     # ------------------------------------------------------------------
     # Frame extraction
@@ -68,6 +106,7 @@ class ClaudeService:
     # Clip analysis
     # ------------------------------------------------------------------
 
+    @_retry(max_attempts=3)
     def analyze_clip(self, frames_b64: list, clip_path: str) -> dict:
         """Send up to 10 keyframes to Claude Vision for clip analysis."""
         if not frames_b64:
@@ -117,6 +156,7 @@ class ClaudeService:
     # EDL generation
     # ------------------------------------------------------------------
 
+    @_retry(max_attempts=3)
     def generate_edl(
         self,
         clips_analysis: list,
@@ -124,6 +164,7 @@ class ClaudeService:
         style_preset: dict,
         target_duration: float,
         aspect_ratio: str = "9:16",
+        style_dna: dict | None = None,
     ) -> dict:
         """Generate a full EDL JSON from Claude."""
         resolution_map = {"9:16": "1080x1920", "16:9": "1920x1080", "1:1": "1080x1080"}
@@ -131,6 +172,14 @@ class ClaudeService:
 
         beat_sample = audio_analysis.get("beat_times", [])[:20]
         energy_sample = audio_analysis.get("energy_curve", [])[:10]
+
+        if style_dna:
+            style_section = (
+                "EDIT STYLE — MATCH THIS STYLE DNA EXACTLY:\n"
+                + json.dumps(style_dna, indent=2)
+            )
+        else:
+            style_section = "EDIT STYLE TO APPLY:\n" + json.dumps(style_preset, indent=2)
 
         prompt = f"""\
 You are an expert video editor. Generate a complete Edit Decision List (EDL) as JSON.
@@ -145,8 +194,7 @@ SOUNDTRACK ANALYSIS:
 - Mood: {audio_analysis.get('mood', 'balanced')}
 - Key musical moments: {audio_analysis.get('peak_moments', [])}
 
-EDIT STYLE TO APPLY:
-{json.dumps(style_preset, indent=2)}
+{style_section}
 
 TARGET DURATION: {target_duration} seconds
 EXPORT FORMAT: {aspect_ratio}
@@ -226,6 +274,7 @@ Return ONLY the JSON object."""
     # Style DNA generation (Phase 2)
     # ------------------------------------------------------------------
 
+    @_retry(max_attempts=3)
     def generate_style_dna(self, computed_analysis: dict, frames_b64: list) -> dict:
         """Analyze a reference video and produce Style DNA JSON."""
         content = []

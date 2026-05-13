@@ -32,11 +32,42 @@ XFADE_MAP = {
 }
 
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".gif"}
+
+
 class FFmpegService:
     def __init__(self, ffmpeg_bin: str = None, ffprobe_bin: str = None, threads: int = None):
         self.ffmpeg = ffmpeg_bin or os.getenv("FFMPEG_BIN", "ffmpeg")
         self.ffprobe = ffprobe_bin or os.getenv("FFPROBE_BIN", "ffprobe")
         self.threads = threads or int(os.getenv("FFMPEG_THREADS", "4"))
+        self._encoder = None  # lazily detected
+
+    def _get_encoder(self, use_hevc: bool = False) -> str:
+        """Return the best available encoder. Auto-detects NVENC once and caches result."""
+        if use_hevc:
+            try:
+                r = subprocess.run(
+                    [self.ffmpeg, "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1",
+                     "-c:v", "hevc_nvenc", "-f", "null", "-"],
+                    capture_output=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    return "hevc_nvenc"
+            except Exception:
+                pass
+            return "libx265"
+
+        if self._encoder is None:
+            try:
+                r = subprocess.run(
+                    [self.ffmpeg, "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1",
+                     "-c:v", "h264_nvenc", "-f", "null", "-"],
+                    capture_output=True, timeout=5,
+                )
+                self._encoder = "h264_nvenc" if r.returncode == 0 else "libx264"
+            except Exception:
+                self._encoder = "libx264"
+        return self._encoder
 
     def run(self, cmd: list, raise_on_error: bool = True) -> tuple:
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -169,8 +200,9 @@ class FFmpegService:
             filter_str = ";".join(filter_parts)
             cmd += ["-filter_complex", filter_str, "-map", final_label]
 
+        encoder = self._get_encoder()
         cmd += [
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:v", encoder, "-preset", "fast", "-crf", "18",
             "-threads", str(self.threads),
             output_path,
         ]
@@ -331,6 +363,205 @@ class FFmpegService:
             "-vf", ",".join(drawtext_parts),
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-c:a", "copy",
+            "-threads", str(self.threads),
+            output_path,
+        ]
+        self.run(cmd)
+        return output_path
+
+    def image_to_video(
+        self,
+        image_path: str,
+        output_path: str,
+        duration: float = 5.0,
+        target_width: int = 1080,
+        target_height: int = 1920,
+        ken_burns: bool = True,
+    ) -> str:
+        """Convert a still image to a video clip with optional Ken Burns zoom."""
+        total_frames = max(int(duration * 25), 1)
+        if ken_burns:
+            vf = (
+                f"zoompan=z='min(zoom+0.0008,1.3)':"
+                f"d={total_frames}:"
+                f"x='iw/2-(iw/zoom/2)':"
+                f"y='ih/2-(ih/zoom/2)':"
+                f"s={target_width}x{target_height},"
+                f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+                f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2"
+            )
+        else:
+            vf = (
+                f"scale={target_width}:{target_height}:"
+                f"force_original_aspect_ratio=decrease,"
+                f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2"
+            )
+        cmd = [
+            self.ffmpeg, "-y",
+            "-loop", "1",
+            "-i", image_path,
+            "-vf", vf,
+            "-t", str(duration),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-an", "-pix_fmt", "yuv420p",
+            "-threads", str(self.threads),
+            output_path,
+        ]
+        self.run(cmd)
+        return output_path
+
+    def apply_speed_ramp_eased(
+        self,
+        input_path: str,
+        output_path: str,
+        ramp_type: str = "ease_out",
+        target_width: int = None,
+        target_height: int = None,
+    ) -> str:
+        """
+        Apply a smooth two-segment speed ramp.
+        ease_in  : first half at 2× speed, second half at 1× (fast → normal)
+        ease_out : first half at 1× speed, second half at 2× (normal → fast)
+        slow_mo  : full clip at 0.5× speed (hero slow motion)
+        """
+        duration = self.get_duration(input_path)
+        if duration <= 0.5:
+            shutil.copy2(input_path, output_path)
+            return output_path
+
+        resize = ""
+        if target_width and target_height:
+            resize = (
+                f"scale={target_width}:{target_height}:"
+                f"force_original_aspect_ratio=increase,"
+                f"crop={target_width}:{target_height},"
+            )
+
+        if ramp_type == "slow_mo":
+            cmd = [
+                self.ffmpeg, "-y", "-i", input_path,
+                "-vf", f"{resize}setpts=2.0*PTS",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-an", "-threads", str(self.threads),
+                output_path,
+            ]
+            self.run(cmd)
+            return output_path
+
+        mid = duration / 2
+        speed1, speed2 = (2.0, 1.0) if ramp_type == "ease_in" else (1.0, 2.0)
+
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="visai_ramp_") as tmp:
+            tmp = Path(tmp)
+            p1, p2 = str(tmp / "seg1.mp4"), str(tmp / "seg2.mp4")
+
+            for path, pts, start, dur in [
+                (p1, 1.0 / speed1, 0, mid),
+                (p2, 1.0 / speed2, mid, duration - mid),
+            ]:
+                cmd = [
+                    self.ffmpeg, "-y",
+                    "-ss", str(start), "-t", str(dur), "-i", input_path,
+                    "-vf", f"{resize}setpts={pts:.4f}*PTS",
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                    "-an", "-threads", str(self.threads), path,
+                ]
+                self.run(cmd)
+
+            self.concat_with_transitions(
+                [p1, p2], [{"type": "hard_cut", "duration": 0}], output_path
+            )
+        return output_path
+
+    def generate_captions(self, video_path: str, whisper_model: str = "base") -> list:
+        """
+        Run Whisper on the video's audio track and return caption segments
+        formatted as text-overlay dicts (compatible with add_text_overlays).
+        Gracefully returns [] if whisper is not installed or fails.
+        """
+        try:
+            import whisper
+        except ImportError:
+            print("  [captions] openai-whisper not installed — skipping")
+            return []
+
+        import tempfile
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+            self.run([
+                self.ffmpeg, "-y", "-i", video_path,
+                "-vn", "-ar", "16000", "-ac", "1", tmp_path,
+            ])
+            model = whisper.load_model(whisper_model)
+            result = model.transcribe(tmp_path)
+            os.unlink(tmp_path)
+
+            overlays = []
+            for seg in result.get("segments", []):
+                text = seg["text"].strip()
+                if text:
+                    overlays.append({
+                        "text": text,
+                        "start_time": float(seg["start"]),
+                        "duration": float(seg["end"]) - float(seg["start"]),
+                        "position": "bottom",
+                        "animation": "fade",
+                        "size": "small",
+                        "color": "white",
+                        "opacity": 0.9,
+                    })
+            return overlays
+
+        except Exception as e:
+            print(f"  [captions] Whisper failed ({e}) — skipping")
+            return []
+
+    def mix_sound_fx(
+        self,
+        video_path: str,
+        output_path: str,
+        sound_fx: list,
+        sfx_dir: str,
+    ) -> str:
+        """
+        Overlay sound FX at specific timestamps using FFmpeg adelay + amix.
+        Skips silently if no SFX files exist.
+        """
+        valid_fx = []
+        for fx in sound_fx:
+            sfx_path = os.path.join(sfx_dir, fx.get("file", ""))
+            if os.path.exists(sfx_path):
+                valid_fx.append({**fx, "path": sfx_path})
+
+        if not valid_fx:
+            shutil.copy2(video_path, output_path)
+            return output_path
+
+        cmd = [self.ffmpeg, "-y", "-i", video_path]
+        for fx in valid_fx:
+            cmd += ["-i", fx["path"]]
+
+        filter_parts = []
+        mix_labels = ["[0:a]"]
+        for i, fx in enumerate(valid_fx):
+            delay_ms = int(float(fx.get("timeline_time", 0)) * 1000)
+            vol = float(fx.get("volume", 0.5))
+            label = f"[sfx{i}]"
+            filter_parts.append(
+                f"[{i + 1}:a]adelay={delay_ms}|{delay_ms},volume={vol:.3f}{label}"
+            )
+            mix_labels.append(label)
+
+        n = len(mix_labels)
+        filter_parts.append(f"{''.join(mix_labels)}amix=inputs={n}:duration=first[outa]")
+
+        cmd += [
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "0:v", "-map", "[outa]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
             "-threads", str(self.threads),
             output_path,
         ]
