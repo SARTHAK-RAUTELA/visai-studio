@@ -150,4 +150,46 @@ export function getAnalytics() {
   return api.get('/analytics')
 }
 
+/** GET /api/export-presets */
+export function getExportPresets() {
+  return api.get('/export-presets')
+}
+
+/** GET /health */
+export function getHealth() {
+  return api.get('/health', { baseURL: '' })
+}
+
+/** POST /api/preview/:jobId — queue a 30s preview render */
+export function createPreview(jobId) {
+  return api.post(`/preview/${jobId}`)
+}
+
+/** POST /api/photo/convert — convert photo to video clip */
+export function photoToVideo(formData) {
+  return api.post('/photo/convert', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+/** GET /api/transitions — categorized transition list */
+export function getTransitions() {
+  return api.get('/transitions')
+}
+
+/** POST /api/clips/:fileId/detect-scenes — detect scene cuts */
+export function detectScenes(fileId) {
+  return api.post(`/clips/${fileId}/detect-scenes`)
+}
+
+/** POST /api/clips/:fileId/reframe — re-crop clip to new aspect ratio */
+export function reframeClip(fileId, targetRatio) {
+  return api.post(`/clips/${fileId}/reframe`, { target_ratio: targetRatio })
+}
+
+/** POST /api/audio/:fileId/vocal-isolate — HPSS vocal isolation */
+export function isolateVocals(fileId) {
+  return api.post(`/audio/${fileId}/vocal-isolate`)
+}
+
 export default api

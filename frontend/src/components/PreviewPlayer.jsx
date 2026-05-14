@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react'
 import useEditStore from '../stores/editStore.js'
-import { getHistory } from '../api/client.js'
+import { getHistory, createPreview } from '../api/client.js'
+import TimelineEditor from './TimelineEditor.jsx'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(seconds) {
@@ -115,14 +116,17 @@ export default function PreviewPlayer() {
     reset,
     setScreen,
     setFineTuneJobId,
+    setJobState,
   } = useEditStore()
 
   const videoRef = useRef(null)
-  const [playing,       setPlaying]       = useState(false)
-  const [currentTime,   setCurrentTime]   = useState(0)
-  const [duration,      setDuration]      = useState(0)
-  const [videoError,    setVideoError]    = useState(null)
-  const [historyOpen,   setHistoryOpen]   = useState(false)
+  const [playing,         setPlaying]         = useState(false)
+  const [currentTime,     setCurrentTime]     = useState(0)
+  const [duration,        setDuration]        = useState(0)
+  const [videoError,      setVideoError]      = useState(null)
+  const [historyOpen,     setHistoryOpen]     = useState(false)
+  const [timelineOpen,    setTimelineOpen]    = useState(false)
+  const [previewLoading,  setPreviewLoading]  = useState(false)
 
   const videoSrc  = outputUrl || (jobId ? `/api/job/${jobId}/result` : null)
   const downloadUrl = jobId ? `/api/job/${jobId}/result` : outputUrl
@@ -169,6 +173,20 @@ export default function PreviewPlayer() {
     setFineTuneJobId(jobId)
     setScreen('finetune')
   }, [jobId, setFineTuneJobId, setScreen])
+
+  const handlePreviewRender = useCallback(async () => {
+    if (!jobId) return
+    setPreviewLoading(true)
+    try {
+      const res = await createPreview(jobId)
+      const newJobId = res.data.job_id
+      setJobState({ jobId: newJobId, jobStatus: 'pending', jobProgress: 0, jobMessage: 'Generating 30s preview...' })
+      setScreen('processing')
+    } catch (e) {
+      setVideoError(`Preview failed: ${e.message}`)
+    }
+    setPreviewLoading(false)
+  }, [jobId, setJobState, setScreen])
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0
 
@@ -307,6 +325,11 @@ export default function PreviewPlayer() {
             </p>
           </div>
 
+          {/* Timeline editor */}
+          {timelineOpen && (
+            <TimelineEditor onClose={() => setTimelineOpen(false)} />
+          )}
+
           {/* Action buttons */}
           <div className="flex flex-col gap-3">
             {/* Download */}
@@ -346,6 +369,36 @@ export default function PreviewPlayer() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                 </svg>
                 Adjust Colors
+              </button>
+              <button
+                onClick={() => setTimelineOpen((v) => !v)}
+                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                  timelineOpen
+                    ? 'bg-violet-900/30 border-violet-600 text-violet-300'
+                    : 'bg-[#12121a] border-[#1e1e2e] text-slate-300 hover:border-violet-700 hover:text-slate-100'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h8M4 18h8" />
+                </svg>
+                Timeline
+              </button>
+              <button
+                onClick={handlePreviewRender}
+                disabled={previewLoading || !jobId}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium bg-[#12121a] border border-[#1e1e2e] text-slate-300 hover:border-violet-700 hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {previewLoading ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.882v6.236a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+                30s Preview
               </button>
             </div>
 

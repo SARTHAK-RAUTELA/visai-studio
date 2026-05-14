@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import useEditStore from '../stores/editStore.js'
-import { analyzeReference, getReferenceResult, generateEdit } from '../api/client.js'
+import { analyzeReference, getReferenceResult, generateEdit, getExportPresets } from '../api/client.js'
 import StyleDNACard from './StyleDNACard.jsx'
 
 // ─── Style definitions ────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ const STYLES = [
 ]
 
 const DURATIONS = [15, 30, 60, 90]
-const RATIOS = ['9:16', '16:9', '1:1']
+const RATIOS = ['9:16', '16:9', '1:1', '4:5']
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
 function Spinner({ size = 'sm' }) {
@@ -157,9 +157,13 @@ export default function StyleSelector() {
     autoCaptions,
     soundFx,
     lutIntensity,
+    beatSync,
+    audioDucking,
     styleDnaId,
     styleDna,
     refAnalysisStatus,
+    resolution,
+    exportPreset,
     setSelectedStyle,
     setTargetDuration,
     setAspectRatio,
@@ -168,11 +172,30 @@ export default function StyleSelector() {
     setJobState,
     setStyleDna,
     setRefAnalysisStatus,
+    setResolution,
+    setExportPreset,
   } = useEditStore()
 
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [generateError, setGenerateError] = useState(null)
   const [generating, setGenerating] = useState(false)
+  const [presets, setPresets] = useState([])
+
+  useEffect(() => {
+    getExportPresets()
+      .then((r) => setPresets(r.data?.presets || []))
+      .catch(() => {})
+  }, [])
+
+  const handleSelectPreset = useCallback((preset) => {
+    if (exportPreset?.id === preset.id) {
+      setExportPreset(null)
+      return
+    }
+    setExportPreset(preset)
+    setAspectRatio(preset.aspect_ratio)
+    setResolution(preset.resolution)
+  }, [exportPreset, setExportPreset, setAspectRatio, setResolution])
 
   // ── Reference analysis ────────────────────────────────────────────────────
   const handleSelectMatchReference = useCallback(async () => {
@@ -229,10 +252,13 @@ export default function StyleSelector() {
         style_dna_id:
           selectedStyle === '__match_reference__' ? styleDnaId : null,
         target_duration: targetDuration,
-        aspect_ratio: aspectRatio,
+        aspect_ratio: exportPreset?.aspect_ratio || aspectRatio,
+        resolution_preset: exportPreset?.resolution || resolution || '1080p',
         auto_captions: autoCaptions,
         sound_fx: soundFx,
         lut_intensity: lutIntensity,
+        beat_sync: beatSync,
+        audio_ducking: audioDucking,
       }
       const res = await generateEdit(payload)
       const jobId = res.data.job_id
@@ -252,6 +278,8 @@ export default function StyleSelector() {
     autoCaptions,
     soundFx,
     lutIntensity,
+    beatSync,
+    audioDucking,
     setJobState,
     setScreen,
   ])
@@ -372,18 +400,45 @@ export default function StyleSelector() {
             {/* Aspect ratio */}
             <div>
               <p className="text-sm font-medium text-slate-300 mb-2">Aspect ratio</p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {RATIOS.map((r) => (
                   <ToggleButton
                     key={r}
-                    active={aspectRatio === r}
-                    onClick={() => setAspectRatio(r)}
+                    active={aspectRatio === r && !exportPreset}
+                    onClick={() => { setAspectRatio(r); setExportPreset(null) }}
                   >
-                    {r === '9:16' ? '9:16 Reels' : r === '16:9' ? '16:9 YouTube' : '1:1 Feed'}
+                    {r === '9:16' ? '9:16' : r === '16:9' ? '16:9' : r === '1:1' ? '1:1' : '4:5'}
                   </ToggleButton>
                 ))}
               </div>
             </div>
+
+            {/* Platform export presets */}
+            {presets.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-slate-300 mb-2">Platform preset</p>
+                <div className="flex gap-2 flex-wrap">
+                  {presets.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleSelectPreset(p)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        exportPreset?.id === p.id
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-[#12121a] border border-[#1e1e2e] text-slate-400 hover:border-violet-700 hover:text-slate-200'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {exportPreset && (
+                  <p className="text-xs text-violet-400 mt-1.5">
+                    {exportPreset.label} — {exportPreset.aspect_ratio} {exportPreset.resolution}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Advanced toggle */}
             <button
@@ -432,6 +487,18 @@ export default function StyleSelector() {
                   checked={soundFx}
                   onChange={(v) => setAdvanced({ soundFx: v })}
                   label="Sound FX (whoosh, impact)"
+                />
+
+                <ToggleSwitch
+                  checked={beatSync}
+                  onChange={(v) => setAdvanced({ beatSync: v })}
+                  label="Beat Sync (snap cuts to beat grid)"
+                />
+
+                <ToggleSwitch
+                  checked={audioDucking}
+                  onChange={(v) => setAdvanced({ audioDucking: v })}
+                  label="Audio Ducking (reduce music peaks)"
                 />
               </div>
             )}

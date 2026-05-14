@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from logger import logger
 from services.ffmpeg_service import FFmpegService, IMAGE_EXTENSIONS
 
 
@@ -52,7 +53,7 @@ class ExportService:
             tmp = Path(tmp)
 
             # ── Step 1: Trim ──────────────────────────────────────────
-            print("  [1/5] Trimming clips...")
+            logger.info("[1/7] Trimming clips...")
             trimmed_clips = []
             transitions_out = []
 
@@ -60,7 +61,7 @@ class ExportService:
                 source_file = clip_info.get("source_file", "")
                 clip_path = self._resolve_clip(source_file, clips_dir)
                 if not clip_path:
-                    print(f"    Warning: clip not found '{source_file}' — skipping")
+                    logger.warning(f"Clip not found '{source_file}' — skipping")
                     continue
 
                 source_in = float(clip_info.get("source_in", 0.0))
@@ -131,14 +132,14 @@ class ExportService:
                 raise RuntimeError("No clips could be processed — check that clip files exist and are readable")
 
             # ── Step 2: Concatenate ──────────────────────────────────
-            print("  [2/5] Concatenating with transitions...")
+            logger.info("[2/7] Concatenating with transitions...")
             concat_path = str(tmp / "concat.mp4")
             # transitions_out[i] is between trimmed_clips[i] and trimmed_clips[i+1]
             transitions_between = transitions_out[: len(trimmed_clips) - 1]
             self.ffmpeg.concat_with_transitions(trimmed_clips, transitions_between, concat_path)
 
             # ── Step 3: Color grade ──────────────────────────────────
-            print("  [3/5] Applying color grade...")
+            logger.info("[3/7] Applying color grade...")
             grade = edl.get("global_grade", {})
             lut_name = grade.get("lut", "teal_orange")
             lut_path = str(self.luts_dir / f"{lut_name}.cube")
@@ -160,7 +161,7 @@ class ExportService:
             # ── Step 4: Text overlays ────────────────────────────────
             text_overlays = edl.get("text_overlays", [])
             if text_overlays:
-                print("  [4/5] Adding text overlays...")
+                logger.info("[4/7] Adding text overlays...")
                 text_path = str(tmp / "with_text.mp4")
                 try:
                     self.ffmpeg.add_text_overlays(
@@ -170,13 +171,13 @@ class ExportService:
                     )
                     graded_path = text_path
                 except RuntimeError as e:
-                    print(f"    Warning: text overlay failed ({e}); skipping overlays")
+                    logger.warning(f"Text overlay failed ({e}); skipping overlays")
             else:
-                print("  [4/5] No text overlays.")
+                logger.info("[4/7] No text overlays.")
 
             # ── Step 5: Auto-captions (Whisper) ─────────────────────
             if auto_captions:
-                print("  [5/7] Generating auto-captions with Whisper...")
+                logger.info("[5/7] Generating auto-captions with Whisper...")
                 caption_overlays = self.ffmpeg.generate_captions(graded_path, whisper_model)
                 if caption_overlays:
                     captions_path = str(tmp / "with_captions.mp4")
@@ -188,28 +189,28 @@ class ExportService:
                         )
                         graded_path = captions_path
                     except RuntimeError as e:
-                        print(f"    Warning: captions failed ({e}) — skipping")
+                        logger.warning(f"Captions failed ({e}) — skipping")
                 else:
-                    print("  [5/7] No captions generated.")
+                    logger.info("[5/7] No captions generated.")
             else:
-                print("  [5/7] Auto-captions disabled.")
+                logger.info("[5/7] Auto-captions disabled.")
 
             # ── Step 6: Sound FX ─────────────────────────────────────
             sound_fx = edl.get("sound_fx", [])
             if sound_fx:
-                print("  [6/7] Mixing sound FX...")
+                logger.info("[6/7] Mixing sound FX...")
                 sfx_path = str(tmp / "with_sfx.mp4")
                 sfx_dir = str(self.luts_dir.parent / "sfx")
                 try:
                     self.ffmpeg.mix_sound_fx(graded_path, sfx_path, sound_fx, sfx_dir)
                     graded_path = sfx_path
                 except RuntimeError as e:
-                    print(f"    Warning: SFX mixing failed ({e}) — skipping")
+                    logger.warning(f"SFX mixing failed ({e}) — skipping")
             else:
-                print("  [6/7] No sound FX.")
+                logger.info("[6/7] No sound FX.")
 
             # ── Step 7: Audio mix ────────────────────────────────────
-            print("  [7/7] Mixing audio...")
+            logger.info("[7/7] Mixing audio...")
             audio_cfg = edl.get("audio", {})
 
             if audio_path and os.path.exists(audio_path):

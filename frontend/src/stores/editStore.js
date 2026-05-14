@@ -5,7 +5,7 @@ const useEditStore = create((set, get) => ({
   screen: 'upload', // 'upload' | 'style' | 'processing' | 'preview' | 'finetune' | 'batch'
 
   // ─── Uploaded files ───────────────────────────────────────────────────────
-  clips: [],        // [{ id, name, sizeMb }]
+  clips: [],        // [{ id, name, sizeMb, thumbnail }]
   audio: null,      // { id, name } | null
   reference: null,  // { id, name } | null
 
@@ -31,9 +31,13 @@ const useEditStore = create((set, get) => ({
   resolution: '1080p',        // '720p' | '1080p' | '4K'
   backgroundRemoval: false,
   speedRamp: null,            // null | 'ease_in' | 'ease_out' | 'slow_mo'
+  exportPreset: null,         // selected EXPORT_PRESETS id or null
   dnaLibraryOpen: false,
   batchJobs: [],              // [{ id, style, duration, aspectRatio, status, progress }]
   fineTuneJobId: null,        // job_id being fine-tuned
+  timelineEdl: null,          // EDL loaded for timeline editing
+  beatSync: false,            // snap cut points to beat grid
+  audioDucking: false,        // compress music peaks for dialog clarity
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
@@ -67,6 +71,10 @@ const useEditStore = create((set, get) => ({
         patch.soundFx !== undefined ? patch.soundFx : state.soundFx,
       lutIntensity:
         patch.lutIntensity !== undefined ? patch.lutIntensity : state.lutIntensity,
+      beatSync:
+        patch.beatSync !== undefined ? patch.beatSync : state.beatSync,
+      audioDucking:
+        patch.audioDucking !== undefined ? patch.audioDucking : state.audioDucking,
     })),
 
   setJobState: (patch) =>
@@ -87,6 +95,7 @@ const useEditStore = create((set, get) => ({
   setResolution: (resolution) => set({ resolution }),
   setBackgroundRemoval: (backgroundRemoval) => set({ backgroundRemoval }),
   setSpeedRamp: (speedRamp) => set({ speedRamp }),
+  setExportPreset: (exportPreset) => set({ exportPreset }),
   setDnaLibraryOpen: (open) => set({ dnaLibraryOpen: open }),
   addBatchJob: (job) => set((state) => ({ batchJobs: [...state.batchJobs, job] })),
   updateBatchJob: (id, patch) =>
@@ -94,6 +103,7 @@ const useEditStore = create((set, get) => ({
       batchJobs: state.batchJobs.map((j) => (j.id === id ? { ...j, ...patch } : j)),
     })),
   setFineTuneJobId: (id) => set({ fineTuneJobId: id }),
+  setTimelineEdl: (edl) => set({ timelineEdl: edl }),
 
   reset: () =>
     set({
@@ -118,7 +128,11 @@ const useEditStore = create((set, get) => ({
       resolution: '1080p',
       backgroundRemoval: false,
       speedRamp: null,
+      exportPreset: null,
       fineTuneJobId: null,
+      timelineEdl: null,
+      beatSync: false,
+      audioDucking: false,
     }),
 }))
 

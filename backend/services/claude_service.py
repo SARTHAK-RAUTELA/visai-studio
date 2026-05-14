@@ -9,6 +9,8 @@ from pathlib import Path
 import anthropic
 import cv2
 
+from logger import logger
+
 
 def _retry(max_attempts: int = 3, base_delay: float = 2.0):
     """Retry decorator with exponential back-off for transient API errors."""
@@ -24,7 +26,7 @@ def _retry(max_attempts: int = 3, base_delay: float = 2.0):
                     last_exc = e
                     if attempt < max_attempts - 1:
                         wait = base_delay * (2 ** attempt)
-                        print(f"  [claude] Transient error ({type(e).__name__}), retry {attempt + 1}/{max_attempts - 1} in {wait:.1f}s")
+                        logger.warning(f"[claude] Transient error ({type(e).__name__}), retry {attempt + 1}/{max_attempts - 1} in {wait:.1f}s")
                         time.sleep(wait)
             raise last_exc
         return wrapper
@@ -141,6 +143,12 @@ class ClaudeService:
                 "Return ONLY the JSON object, no other text."
             ),
         })
+
+        try:
+            from middleware.rate_limit import rate_limiter
+            rate_limiter.acquire()
+        except Exception:
+            pass
 
         response = self.client.messages.create(
             model=MODEL,
@@ -259,6 +267,12 @@ Rules:
 
 Return ONLY the JSON object."""
 
+        try:
+            from middleware.rate_limit import rate_limiter
+            rate_limiter.acquire()
+        except Exception:
+            pass
+
         response = self.client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -294,6 +308,12 @@ Return ONLY the JSON object."""
                 "this video's editing language. Return ONLY valid JSON."
             ),
         })
+
+        try:
+            from middleware.rate_limit import rate_limiter
+            rate_limiter.acquire()
+        except Exception:
+            pass
 
         response = self.client.messages.create(
             model=MODEL,

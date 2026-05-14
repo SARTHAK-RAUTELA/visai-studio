@@ -1,6 +1,7 @@
 """
 Scene detection and transition classification — Phase 2.
 Uses PySceneDetect to find cut points, OpenCV for transition type classification.
+All detection thresholds are configurable via constructor.
 """
 
 import cv2
@@ -8,6 +9,22 @@ import numpy as np
 
 
 class SceneService:
+    def __init__(
+        self,
+        fade_black_threshold: float = 15.0,
+        fade_white_threshold: float = 240.0,
+        hard_cut_threshold: float = 40.0,
+        dissolve_variance_ratio: float = 0.3,
+        zoom_outward_ratio: float = 0.65,
+        wipe_ratio: float = 3.0,
+    ):
+        self.fade_black_threshold  = fade_black_threshold
+        self.fade_white_threshold  = fade_white_threshold
+        self.hard_cut_threshold    = hard_cut_threshold
+        self.dissolve_variance_ratio = dissolve_variance_ratio
+        self.zoom_outward_ratio    = zoom_outward_ratio
+        self.wipe_ratio            = wipe_ratio
+
     def detect_scenes(self, video_path: str) -> list:
         """
         Detect scene cuts using PySceneDetect.
@@ -33,8 +50,7 @@ class SceneService:
         cap.release()
         duration = total_frames / fps
         interval = 3.0
-        scenes = []
-        t = 0.0
+        scenes, t = [], 0.0
         while t < duration:
             scenes.append((t, min(t + interval, duration)))
             t += interval
@@ -44,7 +60,6 @@ class SceneService:
         """
         Classify the transition type at a cut boundary.
         Algorithm order: fade_black → fade_white → hard_cut → dissolve → zoom → wipe → hard_cut.
-        See projectDetails.md Section 3.2.
         """
         if not frames_before or not frames_after:
             return "hard_cut"
@@ -52,18 +67,18 @@ class SceneService:
         last_before = frames_before[-1]
         first_after = frames_after[0]
 
-        # 1. Fade to black
+        # 1. Fade to black — use the darkest frame in trailing window
         gray_vals = [np.mean(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)) for f in frames_before[-5:]]
-        if gray_vals and min(gray_vals) < 15:
+        if gray_vals and min(gray_vals) < self.fade_black_threshold:
             return "fade_black"
 
         # 2. Fade to white
-        if gray_vals and min(gray_vals) > 240:
+        if gray_vals and max(gray_vals) > self.fade_white_threshold:
             return "fade_white"
 
         # 3. Hard cut (abrupt pixel difference)
         diff = cv2.absdiff(last_before, first_after)
-        if np.mean(diff) > 40:
+        if np.mean(diff) > self.hard_cut_threshold:
             return "hard_cut"
 
         # 4. Cross dissolve (gradual histogram progression)
@@ -96,13 +111,11 @@ class SceneService:
     def extract_frames_at(
         self, cap, start_sec: float, end_sec: float, fps: float, max_frames: int = 10
     ) -> list:
-        """Extract up to max_frames frames between two timestamps."""
         frames = []
         start_frame = int(start_sec * fps)
         end_frame = int(end_sec * fps)
         span = max(end_frame - start_frame, 1)
         indices = [start_frame + int(i * span / max_frames) for i in range(max_frames)]
-
         for idx in indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
@@ -111,7 +124,6 @@ class SceneService:
         return frames
 
     def get_frame_at(self, cap, time_sec: float):
-        """Get a single frame at a specific timestamp. Returns None on failure."""
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_idx = int(time_sec * fps)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -125,13 +137,13 @@ class SceneService:
             return False
         mean_val = np.mean(hist_scores)
         variance = np.var(hist_scores)
-        return mean_val > 0 and variance < (mean_val * 0.3)
+        return mean_val > 0 and variance < (mean_val * self.dissolve_variance_ratio)
 
     def _is_zoom_flow(self, flow: np.ndarray) -> bool:
         h, w = flow.shape[:2]
         cy, cx = h // 2, w // 2
         step = max(h // 8, 1)
-        outward, total = 0, 0
+        outward = total = 0
         for y in range(0, h, step):
             for x in range(0, w, step):
                 fx, fy = flow[y, x]
@@ -140,7 +152,7 @@ class SceneService:
                     total += 1
                     if fx * dx + fy * dy > 0:
                         outward += 1
-        return total > 0 and (outward / total) > 0.65
+        return total > 0 and (outward / total) > self.zoom_outward_ratio
 
     def _is_wipe_pattern(self, frames_before: list, frames_after: list) -> bool:
         if not frames_before or not frames_after:
@@ -150,14 +162,13 @@ class SceneService:
             a = frames_after[0].astype(float)
             diff = np.abs(b - a)
             h, w = diff.shape[:2]
-            left_diff = np.mean(diff[:, :w // 2])
+            left_diff  = np.mean(diff[:, :w // 2])
             right_diff = np.mean(diff[:, w // 2:])
-            top_diff = np.mean(diff[:h // 2, :])
-            bot_diff = np.mean(diff[h // 2:, :])
-            ratio = 3.0
+            top_diff   = np.mean(diff[:h // 2, :])
+            bot_diff   = np.mean(diff[h // 2:, :])
             return (
-                max(left_diff, right_diff) / (min(left_diff, right_diff) + 1e-6) > ratio
-                or max(top_diff, bot_diff) / (min(top_diff, bot_diff) + 1e-6) > ratio
+                max(left_diff, right_diff) / (min(left_diff, right_diff) + 1e-6) > self.wipe_ratio
+                or max(top_diff, bot_diff) / (min(top_diff, bot_diff) + 1e-6) > self.wipe_ratio
             )
         except Exception:
             return False

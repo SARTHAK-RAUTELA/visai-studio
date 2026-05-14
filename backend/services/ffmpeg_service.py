@@ -1,11 +1,15 @@
+import base64
 import json
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+from logger import logger
 
 # Maps VisualAI transition names → FFmpeg xfade transition names
 XFADE_MAP = {
@@ -483,7 +487,7 @@ class FFmpegService:
         try:
             import whisper
         except ImportError:
-            print("  [captions] openai-whisper not installed — skipping")
+            logger.info("[captions] openai-whisper not installed — skipping")
             return []
 
         import tempfile
@@ -515,7 +519,7 @@ class FFmpegService:
             return overlays
 
         except Exception as e:
-            print(f"  [captions] Whisper failed ({e}) — skipping")
+            logger.warning(f"[captions] Whisper failed ({e}) — skipping")
             return []
 
     def mix_sound_fx(
@@ -567,6 +571,103 @@ class FFmpegService:
         ]
         self.run(cmd)
         return output_path
+
+    def reframe_clip(
+        self,
+        input_path: str,
+        output_path: str,
+        target_ratio: str = "9:16",
+    ) -> str:
+        """Crop and scale a video clip to a new aspect ratio."""
+        from services.export_service import ExportService
+        res_map = ExportService.RESOLUTIONS.get(target_ratio, ExportService.RESOLUTIONS["9:16"])
+        w, h = res_map.get("1080p", (1080, 1920))
+
+        probe = subprocess.run(
+            [self.ffprobe, "-v", "quiet", "-print_format", "json",
+             "-show_streams", "-select_streams", "v:0", input_path],
+            capture_output=True, text=True,
+        )
+        src_w, src_h = 1920, 1080
+        try:
+            data = json.loads(probe.stdout)
+            stream = data.get("streams", [{}])[0]
+            src_w = int(stream.get("width", 1920))
+            src_h = int(stream.get("height", 1080))
+        except Exception:
+            pass
+
+        src_ar = src_w / src_h
+        tgt_ar = w / h
+        if src_ar > tgt_ar:
+            crop_h = src_h
+            crop_w = int(src_h * tgt_ar)
+        else:
+            crop_w = src_w
+            crop_h = int(src_w / tgt_ar)
+        crop_x = (src_w - crop_w) // 2
+        crop_y = (src_h - crop_h) // 2
+
+        vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={w}:{h}"
+        cmd = [
+            self.ffmpeg, "-y", "-i", input_path,
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "copy",
+            "-threads", str(self.threads),
+            output_path,
+        ]
+        self.run(cmd)
+        return output_path
+
+    def apply_audio_ducking(
+        self,
+        video_path: str,
+        output_path: str,
+        duck_gain: float = 8.0,
+    ) -> str:
+        """Reduce loud music peaks to improve dialog clarity.
+
+        Uses FFmpeg compand filter — brings down peaks > -20 dB by duck_gain dB,
+        which simulates background music ducking under voice.
+        """
+        filter_str = (
+            f"[0:a]compand="
+            f"attacks=0.3:decays=1.0:"
+            f"points=-80/-80|-20/-20|0/-{duck_gain:.1f}:"
+            f"soft-knee=0.5[aout]"
+        )
+        cmd = [
+            self.ffmpeg, "-y", "-i", video_path,
+            "-filter_complex", filter_str,
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            "-threads", str(self.threads),
+            output_path,
+        ]
+        self.run(cmd)
+        return output_path
+
+    def generate_thumbnail(self, video_path: str, seek: float = 1.0, width: int = 160) -> str:
+        """Extract one frame, return as base64 JPEG string. Returns '' on failure."""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp_path = tmp.name
+            self.run([
+                self.ffmpeg, "-y", "-ss", str(seek), "-i", video_path,
+                "-vframes", "1", "-vf", f"scale={width}:-1",
+                tmp_path,
+            ], raise_on_error=False)
+            p = Path(tmp_path)
+            if p.exists() and p.stat().st_size > 0:
+                data = base64.b64encode(p.read_bytes()).decode()
+                p.unlink(missing_ok=True)
+                return data
+            p.unlink(missing_ok=True)
+        except Exception as e:
+            logger.debug(f"Thumbnail generation failed for {video_path}: {e}")
+        return ""
 
     @staticmethod
     def _ffmpeg_path(path: str) -> str:

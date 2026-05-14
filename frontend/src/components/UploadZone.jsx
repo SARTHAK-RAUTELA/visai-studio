@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import useEditStore from '../stores/editStore.js'
-import { uploadFiles, uploadReference } from '../api/client.js'
+import { uploadFiles, uploadReference, detectScenes } from '../api/client.js'
 
 // ─── Spinner ─────────────────────────────────────────────────────────────────
 function Spinner({ size = 'sm' }) {
@@ -56,6 +56,8 @@ function ClipsDropZone() {
   const { clips, addClip, removeClip } = useEditStore()
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
+  const [scenesLoading, setScenesLoading] = useState({}) // { [clipId]: bool }
+  const [scenesResult, setScenesResult] = useState({})   // { [clipId]: scene_count }
 
   const onDrop = useCallback(
     async (acceptedFiles) => {
@@ -71,7 +73,8 @@ function ClipsDropZone() {
           addClip({
             id: data.file_id,
             name: file.name,
-            sizeMb: (file.size / 1024 / 1024).toFixed(1),
+            sizeMb: data.size_mb ?? (file.size / 1024 / 1024).toFixed(1),
+            thumbnail: data.thumbnail || null,
           })
         } catch (err) {
           setError(`Failed to upload "${file.name}": ${err.message}`)
@@ -81,6 +84,18 @@ function ClipsDropZone() {
     },
     [addClip]
   )
+
+  const handleDetectScenes = useCallback(async (clipId) => {
+    setScenesLoading((s) => ({ ...s, [clipId]: true }))
+    setScenesResult((s) => ({ ...s, [clipId]: null }))
+    try {
+      const res = await detectScenes(clipId)
+      setScenesResult((s) => ({ ...s, [clipId]: res.data.scene_count }))
+    } catch (err) {
+      setScenesResult((s) => ({ ...s, [clipId]: `Error: ${err.message}` }))
+    }
+    setScenesLoading((s) => ({ ...s, [clipId]: false }))
+  }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -125,21 +140,46 @@ function ClipsDropZone() {
               className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#12121a] border border-[#1e1e2e]"
             >
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base">📎</span>
-                <span className="text-sm text-slate-200 truncate max-w-[200px]">
+                {clip.thumbnail ? (
+                  <img
+                    src={`data:image/jpeg;base64,${clip.thumbnail}`}
+                    alt=""
+                    className="w-10 h-7 object-cover rounded flex-shrink-0 border border-[#1e1e2e]"
+                  />
+                ) : (
+                  <span className="text-base flex-shrink-0">📎</span>
+                )}
+                <span className="text-sm text-slate-200 truncate max-w-[180px]">
                   {clip.name}
                 </span>
                 <span className="text-xs text-slate-500 whitespace-nowrap">
                   {clip.sizeMb} MB
                 </span>
               </div>
-              <button
-                onClick={() => removeClip(clip.id)}
-                className="ml-3 w-6 h-6 flex items-center justify-center rounded-full text-slate-500 hover:text-red-400 hover:bg-red-900/20 transition-colors flex-shrink-0"
-                aria-label="Remove clip"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                <button
+                  onClick={() => handleDetectScenes(clip.id)}
+                  disabled={scenesLoading[clip.id]}
+                  title="Detect scene cuts"
+                  className="px-2 py-1 text-xs rounded bg-[#1e1e2e] border border-[#2e2e3e] text-slate-400 hover:text-violet-300 hover:border-violet-700 disabled:opacity-40 transition-colors"
+                >
+                  {scenesLoading[clip.id] ? <Spinner size="sm" /> : 'Scenes'}
+                </button>
+                {scenesResult[clip.id] != null && (
+                  <span className="text-xs text-violet-400 whitespace-nowrap">
+                    {typeof scenesResult[clip.id] === 'number'
+                      ? `${scenesResult[clip.id]} scenes`
+                      : scenesResult[clip.id]}
+                  </span>
+                )}
+                <button
+                  onClick={() => removeClip(clip.id)}
+                  className="w-6 h-6 flex items-center justify-center rounded-full text-slate-500 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                  aria-label="Remove clip"
+                >
+                  ×
+                </button>
+              </div>
             </li>
           ))}
         </ul>

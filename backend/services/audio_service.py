@@ -60,3 +60,38 @@ class AudioService:
         if bpm < 120:
             return "medium"
         return "fast"
+
+    def snap_edl_to_beats(self, edl: dict, beat_times: list, tolerance: float = 0.3) -> dict:
+        """Shift clip cut points to align with nearest beat within tolerance seconds."""
+        import copy
+        edl = copy.deepcopy(edl)
+        if not beat_times:
+            return edl
+
+        clips = edl.get("clips", [])
+        timeline_pos = 0.0
+        for clip in clips:
+            source_in = float(clip.get("source_in", 0.0))
+            source_out = float(clip.get("source_out", 5.0))
+            clip_dur = source_out - source_in
+
+            nearest = min(beat_times, key=lambda b: abs(b - timeline_pos))
+            diff = nearest - timeline_pos
+            if abs(diff) <= tolerance:
+                new_in = max(0.0, source_in + diff)
+                clip["source_in"] = round(new_in, 3)
+                clip["source_out"] = round(new_in + clip_dur, 3)
+
+            timeline_pos += clip_dur
+
+        return edl
+
+    def isolate_vocals(self, audio_path: str, output_path: str) -> str:
+        """Separate harmonic content (vocals/melody) from percussive using librosa HPSS."""
+        import librosa
+        import soundfile as sf
+
+        y, sr = librosa.load(audio_path, sr=None, mono=True)
+        harmonic, _ = librosa.effects.hpss(y)
+        sf.write(output_path, harmonic, sr)
+        return output_path
